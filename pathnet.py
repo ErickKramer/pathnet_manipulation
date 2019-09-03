@@ -78,7 +78,7 @@ class PathNet(object):
             if (i % 3 == 0):
                 return input_tensor
             elif (i % 3 == 1):
-                # Hold the state of the wieghts for the layer
+                # Hold the state of the weights for the layer
                 with tf.name_scope('weights'):
                     self.variable_summaries(weights[0])
                 
@@ -93,7 +93,7 @@ class PathNet(object):
                 return activations
             
             elif (i % 3 == 2):
-                # Hold the state of the wieghts for the layer
+                # Hold the state of the weights for the layer
                 with tf.name_scope('weights'):
                     self.variable_summaries(weights[0])
                 
@@ -106,3 +106,19 @@ class PathNet(object):
                 activations = act_func(preactivate, name='activation') + input_tensor
                 tf.compat.v1.summary.histogram('activations', activations)
                 return activations
+    
+    def nn_layer(self, input_tensor, weights, biases, layer_name, act_func=tf.nn.relu):
+        # TODO: Add comment about its functionality
+        with tf.name_scope(layer_name):
+            # Hold state of the weights for the layer 
+            with tf.name_scope('weights'):
+                self.variable_summaries(weights[0])
+
+            with tf.name_scope('biases'):
+                self.variable_summaries(biases[0])
+            
+            with tf.name_scope('Wx_plus_b'):
+                preactivate = tf.matmul(input_tensor, weights[0]) + biases
+                tf.compat.v1.summary.histogram('pre_activations', preactivate)
+            
+            return preactivate

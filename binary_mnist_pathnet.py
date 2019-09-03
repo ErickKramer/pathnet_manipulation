@@ -67,7 +67,7 @@ def train():
     # Input placeholders
     with tf.name_scope('input'):
         x = tf.compat.v1.placeholder(tf.float32, [None, tr_data_t1.shape[1]], name='image-input')
-        y = tf.compat.v1.placeholder(tf.float32, [None, tr_label_t1.shape[1]], name='label-input')
+        y_ = tf.compat.v1.placeholder(tf.float32, [None, tr_label_t1.shape[1]], name='label-input')
 
     with tf.name_scope('input_reshape'):
         image_shaped_input = tf.reshape(x, [-1, 28, 28, 1])
@@ -108,19 +108,105 @@ def train():
                 layer_modules[j] = pathnet.module(x, 
                                                   weights[i,j],
                                                   biases[i,j],
-                                                  'layer'+str(i+1)+'_'+str(j+1))*geopath[i,j]
+                                                  'layer'+str(i+1)+\
+                                                  '_'+\
+                                                  str(j+1))*geopath[i,j]
             else:
                 layer_modules[j] = pathnet.module_hidden(j,
                                                    net,
                                                    weights[i,j],
                                                    biases[i,j],
-                                                  'layer'+str(i+1)+'_'+str(j+1))*geopath[i,j]
+                                                  'layer'+str(i+1)+\
+                                                  '_'+\
+                                                  str(j+1))*geopath[i,j]
         net = np.sum(layer_modules)/FLAGS.num_mod
-
-
     
+    output_weights = pathnet.module_weight_variable([FLAGS.num_filt, 2])
+    output_biases = pathnet.module_bias_variable([2])
+    y = pathnet.nn_layer(net, output_weights, output_biases, 'output_layer')
 
+    # Cross-entropy
+    with tf.name_scope('cross_entropy'):
+        diff = tf.nn.softmax_cross_entropy_with_logits(labels=y_, logits=y)
+
+        with tf.name_scope('total'):
+            cross_entropy = tf.reduce_mean(diff)
+    tf.summary.scalar('cross_entropy', cross_entropy)
+
+    # Learning variables
+    var_list_to_learn = [] + output_weights + output_biases
+    for i in range(FLAGS.num_layer):
+        for j in range(FLAGS.num_mod):
+            if (fixed_list[i,j] == '0'):
+                var_list_to_learn += weights[i,j] + biases[i,j]
     
+    # Gradient descent
+    with tf.name_scope('train'):
+        train_step = tf.train.GradientDescentOptimizer(FLAGS.learning_rate).\
+            minimize(cross_entropy,var_list=var_list_to_learn)
+
+    # Accuracy
+    with tf.name_scope('accuracy'):
+        with tf.name_scope('correct_prediction'):
+            correct_prediction = tf.equal(tf.argmax(y,1), tf.argmax(y_,1))
+        
+        with tf.name_scope('accuracy'):
+            accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+    tf.summary.scalar('accuracy', accuracy)
+
+    # Merge all the summaries and write them out 
+    # /tmp/tensorflow/mnist/logs/mnist_with_summaries/
+    merged = tf.summary.merge_all()
+    train_writer = tf.summary.FileWriter(FLAGS.logdir + '/train', sess.graph)
+    test_writer = tf.summary.FileWriter(FLAGS.logdir + '/test', sess.graph)
+    
+    # Initialize all global variables
+    tf.global_variables_initializer().run()  
+
+    # Generate random internal path
+    geopath_set = np.zeros(FLAGS.num_cand, dtype=object)
+    for i in range(FLAGS.num_cand):
+        geopath_set[i] = pathnet.get_geopath(FLAGS.num_layer,
+                                             FLAGS.num_mod,
+                                             FLAGS.num_mod_sel)
+
+    # Parameters placeholders and ops
+    var_update_ops = np.zeros(len(var_list_to_learn), dtype=object)
+    var_update_placeholders = np.zeros(len(var_list_to_learn), dtype=object)
+    for i in range(len(var_list_to_learn)):
+        var_update_placeholders[i] = tf.placeholder(var_list_to_learn[i].dtype,
+                                                    shape=var_list_to_learn[i].get_shape())
+        var_update_ops[i] = var_list_to_learn[i].assign(var_update_placeholders[i])
+    
+    acc_geo = np.zeros(FLAGS.num_comp, dtype=float)
+    summary_geo = np.zeros(FLAGS.num_comp, dtype=object)
+    # Iterate over the training steps
+    for i in range(FLAGS.max_steps):
+        # Tournament selection
+        ## Generate candidates
+        candidates_idx = range(FLAGS.num_cand)
+        ## Shuffle candidates 
+        np.random.shuffle(candidates_idx)
+        ## Choose candidates
+        candidates_idx = candidates_idx[:FLAGS.num_comp]
+
+        # Learning and evaluation
+        ## Iterate over the selected candidates
+        for j in range(len(candidates_idx)):
+            # shuffle data 
+            idx = range(len(tr_data_t1))
+            np.random.shuffle(idx)
+            tr_data_t1 = tr_data_t1[idx]
+            tr_label_t1 = tr_label_t1[idx]
+
+            # Insert Candidate
+            pathnet.geopath_insert(sess, 
+                                   geopath_update_placeholders,
+                                   geopath_update_ops,
+                                   geopath_set[candidates_idx[j]],
+                                   FLAGS.num_layer,
+                                   FLAGS.num_modules)
+
 
     
 
@@ -147,7 +233,7 @@ if __name__=='__main__':
                         help='Number of Modules per Layer')
     parser.add_argument('--num_layer', type=int, default=3,
                         help='Number of layers')
-    parser.add_argument('--mod_sel', type=int, default=3,
+    parser.add_argument('--num_mod_sel', type=int, default=3,
                         help='Number of selected modules per layer')
     parser.add_argument('--epoch_path', type=int, default=50,
                         help='Number of epochs per path')
