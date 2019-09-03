@@ -39,6 +39,47 @@ class PathNet(object):
             for j in range(self.num_modules):
                 geopath[i,j] = tf.Variable(1.0)
         return geopath
+    
+    def geopath_insert(self, sess, geopath_update_placeholders, geopath_update_ops, candidates, num_layer, num_mod):
+        # TODO: Add comment about its functionality
+        for i in range(num_layer):
+            for j in range(num_mod):
+                sess.run(geopath_update_ops[i,j], {geopath_update_placeholders[i,j]:candidates[i,j]})
+
+    def get_geopath(self, num_layer, num_mod, num_mod_sel):
+        # TODO: Add comment about its functionality
+        geopath = np.zeros((num_layer, num_mod), dtype=float)
+
+        for i in range(num_layer):
+            j = 0 
+            while j < num_mod_sel:
+                rand_value = int(np.random.rand()*num_mod)
+                if (geopath[i, rand_value] == 0.):
+                    geopath[i, rand_value] = 1.0
+                    j += 1 
+        return geopath
+    
+    def mutation(self, geopath, num_layer, num_mod, num_mod_sel):
+        '''
+        Mutates the current geopath
+        '''
+        for i in range(num_layer):
+            for j in range(num_mod):
+                if (geopath[i,j] == 1):
+                    rand_value = int(np.random.rand()*num_layer*num_mod_sel)
+                    if (rand_value <= 1):
+                        geopath[i,j] = 0
+                        rand_value_2 = np.random.randint(-2,2) - 2
+                        if (((j + rand_value_2) >= 0) & 
+                            ((j + rand_value_2) < num_mod)):
+                            geopath[i,j + rand_value_2] = 1
+                        else:
+                            if ((j + rand_value) < 0):
+                                geopath[i,0] = 1
+                            elif ((j + rand_value_2) >= num_mod):
+                                geopath[i, num_mod - 1] = 1
+        return geopath
+
 
     def module_weight_variable(self,shape):
         """
@@ -122,3 +163,14 @@ class PathNet(object):
                 tf.compat.v1.summary.histogram('pre_activations', preactivate)
             
             return preactivate
+    
+    def parameters_backup(self,var_list_to_learn):
+        var_list_backup = np.zeros(len(var_list_to_learn), dtype=object)
+        for i in range(len(var_list_to_learn)):
+            var_list_backup[i] = var_list_to_learn[i].eval()
+        return var_list_backup
+
+    def parameters_update(self, sess,var_update_placeholders, var_update_ops, var_list_backup):
+        for i in range(len(var_update_placeholders)):
+            sess.run(var_update_ops[i], {var_update_placeholders[i] : var_list_backup[i]})
+
